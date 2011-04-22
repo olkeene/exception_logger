@@ -9,7 +9,7 @@ class LoggedException < ActiveRecord::Base
         :action_name     => controller.action_name,
         :message         => message,
         :backtrace       => exception.backtrace,
-        :request         => controller.request
+        :request         => controller
       
       deliver_exception(e)
     end
@@ -36,7 +36,9 @@ class LoggedException < ActiveRecord::Base
     write_attribute :backtrace, backtrace
   end
 
-  def request=(request)
+  def request=(controller)
+    request = controller.request
+    
     if request.is_a?(String)
       write_attribute :request, request
     else
@@ -50,7 +52,8 @@ class LoggedException < ActiveRecord::Base
         "* URL:#{" #{request.method.to_s.upcase}" unless request.get?} #{request.protocol}#{request.env["HTTP_HOST"]}#{request.request_uri}",
         "* Format: #{request.format.to_s}",
         "* Parameters: #{request.parameters.inspect}",
-        "* Rails Root: #{rails_root}"
+        "* Rails Root: #{rails_root}",
+        "* Session debug: #{debug controller.session}"
       ] * "\n")
     end
   end
@@ -60,14 +63,25 @@ class LoggedException < ActiveRecord::Base
   end
 
   private
-    @@rails_root      = Pathname.new(RAILS_ROOT).cleanpath.to_s
-    @@backtrace_regex = /^#{Regexp.escape(@@rails_root)}/
+  
+  @@rails_root      = Pathname.new(RAILS_ROOT).cleanpath.to_s
+  @@backtrace_regex = /^#{Regexp.escape(@@rails_root)}/
 
-    def sanitize_backtrace(trace)
-      trace.collect { |line| Pathname.new(line.gsub(@@backtrace_regex, "[RAILS_ROOT]")).cleanpath.to_s }
-    end
+  def sanitize_backtrace(trace)
+    trace.collect { |line| Pathname.new(line.gsub(@@backtrace_regex, "[RAILS_ROOT]")).cleanpath.to_s }
+  end
 
-    def rails_root
-      @@rails_root
+  def rails_root
+    @@rails_root
+  end
+
+  def debug(object)
+    begin
+      Marshal::dump(object)
+      "\n#{object.to_yaml}\n"
+    rescue Exception => e  # errors from Marshal or YAML
+      # Object couldn't be dumped, perhaps because of singleton methods -- this is the fallback
+      "\n#{object.inspect}\n"
     end
+  end
 end
